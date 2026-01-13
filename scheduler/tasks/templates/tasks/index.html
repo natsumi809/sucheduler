@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>スケジューラー</title>
+    <script src='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js'></script>
+    <script src='https://cdn.jsdelivr.net/npm/@fullcalendar/google-calendar@6.1.10/index.global.min.js'></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; display: flex; height: 100vh; color: #333; }
+        .task-list { flex: 2; background-color: #f8f9fa; border-right: 1px solid #ddd; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; }
+        .task-item { background: white; margin: 10px 0; padding: 12px; border-radius: 8px; cursor: grab; border-left: 5px solid #007aff; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-size: 14px; user-select: none; }
+        /* 入力エリア全体 */
+        #new-task-area {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        /* タスク名入力 */
+        #new-task-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #007aff;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 14px;
+            outline: none;
+            display: block; /* エリアが出ればこれも出る */
+        }
+        /* 時間入力（最初は隠す） */
+        #new-task-time {
+            display: none;
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #007aff;
+            border-radius: 8px;
+            box-sizing: border-box;
+            font-size: 14px;
+            outline: none;
+        }
+        
+        .calendar-area { flex: 8; padding: 20px; }
+        #calendar { height: 100%; }
+        .fc-day-sat { background-color: #f0f7ff !important; }
+        .fc-day-sun { background-color: #fff0f0 !important; }
+
+        #edit-modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.4); }
+        .modal-content { background-color: white; margin: 10% auto; padding: 25px; border-radius: 12px; width: 380px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .field { margin-bottom: 15px; }
+        .field label { display: block; font-size: 12px; color: #666; margin-bottom: 5px; }
+        .field input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+        .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+        .btn { padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; font-size: 14px; }
+        .btn-save { background: #007aff; color: white; }
+        .btn-cancel { background: #eee; color: #333; }
+        #clear-time { width: 40px; border: 1px solid #ddd; border-radius: 6px; background: #f8f9fa; cursor: pointer; font-size: 18px; }
+        .color-palette { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 5px; }
+        .color-chip { width: 28px; height: 28px; border-radius: 4px; border: 2px solid #eee; cursor: pointer; }
+        .color-chip.selected { border-color: #333; transform: scale(1.1); }
+
+        /* 一括削除ボタンのホバー効果 */
+        #clear-all-todo:hover { background-color: #ff3b30 !important; color: white !important; }
+
+        /* styleタグの最後の方に追加 */
+        .fc-day-sun .fc-col-header-cell-cushion,
+        .fc-day-sun .fc-daygrid-day-number { color: #ff3b30; } /* 日曜を赤く */
+        .fc-day-sat .fc-col-header-cell-cushion,
+        .fc-day-sat .fc-daygrid-day-number { color: #007aff; } /* 土曜を青く */
+
+        /* 祝日のイベント（背景）を薄いピンクにする設定 */
+        .holiday-event {
+            background-color: #ffe8e8 !important;
+            border: none !important;
+            color: #fe3232 !important;
+            font-size: 0.85em;
+            font-weight: bold;
+            pointer-events: none; /* 祝日はクリックやドラッグ不可にする */
+            opacity: 1 !important;
+        }
+
+        /* カレンダー内の祝日タイトルの配置調整（任意） */
+        .fc-daygrid-bg-event .fc-event-title {
+            padding: 2px 4px !important;
+            display: block !important;
+        }
+
+        /* カレンダーが切り替わるときのアニメーション */
+        /* 右に進むときのアニメーション（新しい月が右から来る） */
+        .slide-in-right {
+            animation: slideInRight 0.3s ease-out;
+        }
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(30px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* 左に戻るときのアニメーション（新しい月が左から来る） */
+        .slide-in-left {
+            animation: slideInLeft 0.3s ease-out;
+        }
+        @keyframes slideInLeft {
+            from { opacity: 0; transform: translateX(-30px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* 右に進む（右からスライド） */
+        .slide-in-right {
+            animation: slideInRight 0.3s ease-out;
+        }
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(30px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* 左に戻る（左からスライド） */
+        .slide-in-left {
+            animation: slideInLeft 0.3s ease-out;
+        }
+        @keyframes slideInLeft {
+            from { opacity: 0; transform: translateX(-30px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* 今日（Today）に戻る時のふわっと表示 */
+        .calendar-fade {
+            animation: calendarFade 0.4s ease-out;
+        }
+        @keyframes calendarFade {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        /* 左上のタイトルとTodayボタンのレイアウト調整 */
+        .fc-toolbar-chunk {
+            display: flex;
+            align-items: center;
+        }
+
+        .fc .fc-toolbar-title {
+            margin-right: 15px; /* タイトルとボタンの間の余白 */
+            font-size: 1.5rem;   /* 文字の大きさ（お好みで調整） */
+        }
+
+        /* Todayボタンの余計なマージンを消して高さを合わせる */
+        .fc .fc-today-button {
+            margin-left: 0 !important;
+        }
+        .todo-delete-btn {
+            transition: background-color 0.3s, transform 0.2s;
+            background-color: #8E8E93; /* 選択削除の時は少し控えめな色 */
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        /* 一括削除（警告状態）の時の色 */
+        .todo-delete-btn.danger {
+            background-color: #FF3B30;
+        }
+        /* 選択削除モードで選択された時の赤枠 */
+        .task-item.selected-for-delete {
+            border: 2px solid #FF3B30 !important;
+            box-shadow: 0 0 10px rgba(255, 59, 48, 0.3);
+        }
+
+        /* 隠しチェックボックス（表示はせず、ロジックとして使用） */
+        .todo-checkbox {
+            display: none;
+        }
+
+        /* 削除・戻す枠：タスク一覧の直下に表示させる設定 */
+        #return-drop-zone, #delete-drop-zone {
+            visibility: hidden; /* display: none の代わりに非表示にする */
+            opacity: 0;
+            margin-top: 15px; 
+            padding: 20px 10px;
+            border-radius: 10px; 
+            text-align: center; 
+            font-weight: bold; 
+            font-size: 0.85em; 
+            position: relative;
+            width: 100%; 
+            box-sizing: border-box;
+            pointer-events: none; /* 非表示時は反応させない */
+            z-index: 10;
+        }
+        #return-drop-zone { border: 3px dashed #007aff; color: #007aff; background: #eef6ff; }
+        #delete-drop-zone { border: 3px dashed #ff3b30; color: #ff3b30; background: #fff2f1; }
+
+    </style>
+</head>
+<body>
+    <div class="task-list" id="external-events-container">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <h2 style="margin: 0;">タスク一覧</h2>
+            <div id="delete-btn-group" style="display: flex; gap: 5px;">
+                <button id="delete-toggle-btn" class="todo-delete-btn">選択削除</button>
+                <button id="bulk-delete-btn" class="todo-delete-btn" style="display: none; background-color: #8E8E93;">一括削除</button>
+            </div>
+        </div>
+
+        <div id="todo-list">
+            {% for task in todo_list %}
+                <div class='fc-event task-item' 
+                    style="border-left-color: {{ task.color }};"
+                    data-id="{{ task.id }}" 
+                    data-event='{"title": "{{ task.title }}", "id": "{{ task.id }}", "color": "{{ task.color }}", "allDay": {{ task.is_all_day|yesno:"true,false" }}, "time": "{{ task.time|time:"H:i" }}"}'>
+                    
+                    <input type="checkbox" class="todo-checkbox" data-id="{{ task.id }}">
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                        <span>{{ task.title }}</span>
+                        {% if task.time %}
+                            <small style="color:#666; font-weight: normal;">{{ task.time|time:"H:i" }}</small>
+                        {% endif %}
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+
+        <div id="new-task-area">
+            <input type="text" id="new-task-input" placeholder="タスク名を入力..." style="flex: 3; display: block;">
+            <input type="time" id="new-task-time" style="flex: 1; padding: 10px; border: 1px solid #007aff; border-radius: 8px; font-size: 14px; outline: none;">
+        </div>
+        <div id="return-drop-zone">ここにドロップで<br>一覧に戻す</div>
+        <div id="delete-drop-zone">🗑️ 削除</div>
+    </div>
+    
+
+    <div class="calendar-area">
+        <div id="calendar"></div>
+    </div>
+
+    <div id="edit-modal">
+        <div class="modal-content">
+            <h3>タスクの詳細設定</h3>
+            <div class="field"><label>タイトル</label><input type="text" id="edit-title"></div>
+            <div style="display: flex; flex-direction: column; gap: 5px;">
+                <div style="display: flex; gap: 10px;">
+                    <div class="field" style="flex: 1;"><label>開始日</label><input type="date" id="edit-date"></div>
+                    <div class="field" style="flex: 1;"><label>終了日</label><input type="date" id="edit-end-date"></div>
+                </div>
+                <div class="field">
+                    <label>時刻（単発タスクの場合）</label>
+                    <div style="display: flex; gap: 5px;">
+                        <input type="time" id="edit-time" step="300" style="flex: 1;">
+                        <button type="button" id="clear-time">×</button>
+                    </div>
+                </div>
+            </div>
+            <div class="field">
+                <label>ラベルカラー</label>
+                <input type="hidden" id="edit-color">
+                <div class="color-palette" id="palette"></div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn btn-cancel" id="modal-cancel">キャンセル</button>
+                <button class="btn btn-save" id="modal-save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const calendarEl = document.getElementById('calendar');
+        const editModal = document.getElementById('edit-modal');
+        const paletteContainer = document.getElementById('palette');
+        const colorInput = document.getElementById('edit-color');
+        const taskInput = document.getElementById('new-task-input');
+        const deleteZone = document.getElementById('delete-drop-zone');
+        const returnZone = document.getElementById('return-drop-zone');
+        const container = document.getElementById('external-events-container');
+        const taskArea = document.getElementById('new-task-area');
+        const taskTimeInput = document.getElementById('new-task-time');
+        let currentEditingId = null;
+        let slideDirection = 'right';
+        let isSaving = false;
+        let isDragging = false;
+        let isComposing = false;
+        document.addEventListener('compositionstart', () => { isComposing = true; });
+        document.addEventListener('compositionend', () => { 
+            isComposing = false;
+            // 変換確定直後のEnterが保存に反応しないよう、一瞬だけラグを作る
+            isSaving = true;
+            setTimeout(() => { isSaving = false; }, 100);
+        });
+
+        // 削除ボタンのトグル処理
+        // --- 削除・選択モードの制御 ---
+        const deleteBtn = document.getElementById('delete-toggle-btn');
+        const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+
+        // キャンセル（通常モードに戻す）関数
+        function exitDeleteMode() {
+            if (bulkDeleteBtn.style.display === 'none') return;
+            deleteBtn.innerText = '選択削除';
+            deleteBtn.style.backgroundColor = '';
+            bulkDeleteBtn.style.display = 'none';
+            document.querySelectorAll('.task-item.selected-for-delete').forEach(el => {
+                el.classList.remove('selected-for-delete');
+                const cb = el.querySelector('.todo-checkbox');
+                if (cb) cb.checked = false;
+            });
+        }
+
+        // 選択削除（または削除実行）ボタン
+        deleteBtn.addEventListener('click', () => {
+            const selectedItems = document.querySelectorAll('.task-item.selected-for-delete');
+            if (bulkDeleteBtn.style.display === 'none') {
+                // モード開始
+                deleteBtn.innerText = '0件を削除';
+                deleteBtn.style.backgroundColor = '#FF3B30';
+                bulkDeleteBtn.style.display = 'block';
+            } else {
+                // 実行
+                if (selectedItems.length === 0) return alert('削除するタスクを選択してください');
+                if (confirm(`${selectedItems.length}件を削除しますか？`)) {
+                    const ids = Array.from(selectedItems).map(item => item.dataset.id);
+                    Promise.all(ids.map(id => fetch('/delete_task/', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({id})
+                    }))).then(() => location.reload());
+                }
+            }
+        });
+
+        // 一括削除ボタン
+        bulkDeleteBtn.addEventListener('click', () => {
+            if (confirm('TODOリストをすべて削除してもよろしいですか？')) {
+                fetch('/delete_all_todo/', { method: 'POST', headers: {'Content-Type': 'application/json'} })
+                .then(() => location.reload());
+            }
+        });
+
+        // カレンダーエリアクリック・Escキーでキャンセル
+        calendarEl.addEventListener('click', exitDeleteMode);
+        // Escキーでキャンセル（削除モード終了 ＋ 入力エリアを閉じる）
+        document.addEventListener('keydown', (e) => { 
+            if (e.key === 'Escape') {
+                // 1. 選択削除モード中なら解除
+                exitDeleteMode();
+                
+                // 2. タスク入力エリアが開いていれば閉じる
+                if (taskArea.style.display === 'flex') {
+                    taskArea.style.display = 'none';
+                    taskTimeInput.style.display = 'none';
+                    taskInput.value = ''; // 文字を消す
+                }
+
+                // 3. 編集モーダルが開いていれば閉じる
+                if (editModal.style.display === 'block') {
+                    calendar.unselect();
+                    editModal.style.display = 'none';
+                }
+            }
+        });
+
+        // --- 2. カラーパレット ---
+        const paletteColors = ["#000000", "#000080", "#00BFFF", "#EA609E", "#F08300", "#00FF00", "#048F51", "#E1AD01", "#FF0000"];
+        paletteColors.forEach(color => {
+            const chip = document.createElement('div');
+            chip.className = 'color-chip';
+            chip.style.backgroundColor = color;
+            chip.setAttribute('data-color', color.toUpperCase());
+            chip.onclick = (e) => {
+                e.stopPropagation();
+                updatePaletteSelection(color);
+            };
+            paletteContainer.appendChild(chip);
+        });
+
+        // --- 3. カレンダー初期化 ---
+        const calendar = new FullCalendar.Calendar(calendarEl, {
+            initialView: 'dayGridMonth',
+            locale: 'ja',
+            // ★ 左側に「タイトル」と「Today」を並べて配置
+            headerToolbar: {
+                left: 'title today', 
+                center: '',
+                right: ''
+            },
+            editable: true,
+            droppable: true,
+            selectable: true, 
+            selectMirror: true, 
+            unselectAuto: true, 
+            dragRevertDuration: 0,
+            
+            dateClick: (info) => openNewTaskModal(info.dateStr),
+            select: (info) => openNewRangeTaskModal(info.startStr, info.endStr),
+
+            eventSources: [
+                {
+                    events: [
+                        {% for task in calendar_tasks %}
+                        { 
+                            id: '{{ task.id }}', title: '{{ task.title }}', 
+                            start: '{{ task.date|date:"Y-m-d" }}{% if task.time %}T{{ task.time|time:"H:i:s" }}{% endif %}', 
+                            {% if task.end_date %}end: '{{ task.end_date|date:"Y-m-d" }}',{% endif %}
+                            backgroundColor: '{{ task.color }}', borderColor: '{{ task.color }}', 
+                            extendedProps: { time: '{{ task.time|time:"H:i" }}' } 
+                        },
+                        {% endfor %}
+                    ]
+                },
+                {
+                    url: 'https://holidays-jp.github.io/api/v1/date.json',
+                    format: 'json', color: 'transparent', className: 'holiday-event',
+                    success: (data) => Object.keys(data).map(date => ({ title: data[date], start: date, display: 'background' }))
+                }
+            ],
+
+            eventClick: (info) => openEditModal(info.event),
+            eventDragStart: function(info) { 
+                [deleteZone, returnZone].forEach(zone => {
+                    zone.style.visibility = 'visible';
+                    zone.style.opacity = '1';
+                    zone.style.pointerEvents = 'auto';
+                });
+            },
+            eventDragStop: function(info) {
+                const x = info.jsEvent.clientX;
+                const y = info.jsEvent.clientY;
+
+                console.log("ドロップ座標: ", x, y);
+                console.log("削除エリアの範囲: ", deleteZone.getBoundingClientRect());
+
+                // 1. 赤枠（削除）の判定
+                // visibilityがvisibleならサイズは確保されているので isInZone が正しく動きます
+                if (deleteZone.style.visibility === 'visible' && isInZone(x, y, deleteZone)) {
+                    deleteTask(info.event.id);
+                }
+                
+                // 2. 青枠（一覧に戻す）の判定
+                if (returnZone.style.visibility === 'visible' && isInZone(x, y, returnZone)) {
+                    fetch('/remove_task_date/', { 
+                        method: 'POST', 
+                        headers: {'Content-Type': 'application/json'}, 
+                        body: JSON.stringify({id: info.event.id}) 
+                    }).then(() => location.reload());
+                }
+
+                // すべての判定が終わってから隠す
+                [deleteZone, returnZone].forEach(zone => {
+                    zone.style.visibility = 'hidden';
+                    zone.style.opacity = '0';
+                    zone.style.pointerEvents = 'none';
+                });
+            },
+            eventReceive: (info) => updateTask(info.event.id, info.event.startStr),
+            eventDrop: (info) => updateTask(info.event.id, info.event.startStr),
+            eventResize: (info) => updateTaskDuration(info.event),
+
+            datesSet: function() {
+                calendarEl.classList.remove('slide-in-left', 'slide-in-right', 'calendar-fade');
+                void calendarEl.offsetWidth;
+                if (slideDirection === 'right') calendarEl.classList.add('slide-in-right');
+                else if (slideDirection === 'left') calendarEl.classList.add('slide-in-left');
+                else calendarEl.classList.add('calendar-fade');
+                slideDirection = '';
+            }
+        }); 
+        calendar.render();
+
+        window.addEventListener('mouseup', (e) => {
+            if (deleteZone.style.display === 'block' && isInZone(e.clientX, e.clientY, deleteZone)) {
+                const draggedEl = e.target.closest('.task-item');
+                if (draggedEl) {
+                    const data = draggedEl.getAttribute('data-event');
+                    const eventId = data ? JSON.parse(data).id : draggedEl.getAttribute('data-id');
+                    if (eventId) {
+                        deleteTask(eventId); // 承認なしで削除を実行
+                    }
+                }
+            }
+            // deleteZone.style.display = 'none'; 
+            // returnZone.style.display = 'none';
+        });
+
+        new FullCalendar.Draggable(container, {
+            itemSelector: '.task-item',
+            eventData: (el) => JSON.parse(el.getAttribute('data-event'))
+        });
+
+        // --- 4. モーダル制御 ---
+        function openNewTaskModal(dateStr) {
+            currentEditingId = null;
+            document.getElementById('edit-title').value = '';
+            document.getElementById('edit-date').value = dateStr;
+            document.getElementById('edit-end-date').value = '';
+            document.getElementById('edit-time').value = '';
+            updatePaletteSelection('#007AFF');
+            editModal.style.display = 'block';
+            setTimeout(() => document.getElementById('edit-title').focus(), 10);
+        }
+
+        // 範囲指定での新規作成モーダル
+        function openNewRangeTaskModal(startStr, endStr) {
+            currentEditingId = null;
+            document.getElementById('edit-title').value = '';
+            document.getElementById('edit-date').value = startStr;
+            
+            // FullCalendarのendStrは翌日の00:00を指すため、見た目上の終了日に調整
+            let endDate = new Date(endStr);
+            endDate.setDate(endDate.getDate() - 1);
+            document.getElementById('edit-end-date').value = endDate.toLocaleDateString('sv');
+            
+            document.getElementById('edit-time').value = '';
+            updatePaletteSelection('#007AFF');
+            editModal.style.display = 'block';
+            
+            setTimeout(() => document.getElementById('edit-title').focus(), 10);
+        }
+
+        function openEditModal(eventObj) {
+            currentEditingId = eventObj.id;
+            document.getElementById('edit-title').value = eventObj.title;
+            updatePaletteSelection((eventObj.backgroundColor || '#007AFF').toUpperCase());
+            if (eventObj.start) document.getElementById('edit-date').value = eventObj.start.toLocaleDateString('sv');
+            document.getElementById('edit-end-date').value = eventObj.end ? eventObj.end.toLocaleDateString('sv') : "";
+            document.getElementById('edit-time').value = eventObj.extendedProps.time || "";
+            editModal.style.display = 'block';
+            setTimeout(() => document.getElementById('edit-title').focus(), 10);
+        }
+
+        function updatePaletteSelection(color) {
+            colorInput.value = color;
+            document.querySelectorAll('.color-chip').forEach(c => c.classList.toggle('selected', c.getAttribute('data-color') === color.toUpperCase()));
+        }
+
+        // --- 5. 保存・削除 ---
+        function submitModalData() {
+            const title = document.getElementById('edit-title').value;
+            if (!title) { 
+                alert('タイトルを入力してください'); 
+                return; 
+            }
+
+            // サーバーに送るデータ
+            const payload = {
+                id: currentEditingId,
+                title: title,
+                date: document.getElementById('edit-date').value,
+                end_date: document.getElementById('edit-end-date').value,
+                time: document.getElementById('edit-time').value,
+                color: colorInput.value
+            };
+
+            fetch(currentEditingId ? '/edit_task/' : '/add_task/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            }).then(() => {
+                // 保存が成功したらカレンダーの選択（青い枠）を解除する
+                if (typeof calendar !== 'undefined') {
+                    calendar.unselect();
+                }
+                location.reload();
+            });
+        }
+
+        document.getElementById('modal-save').onclick = submitModalData;
+        document.getElementById('modal-cancel').onclick = () => {
+            calendar.unselect(); 
+            editModal.style.display = 'none';
+        };
+        document.getElementById('clear-time').onclick = () => document.getElementById('edit-time').value = '';
+
+        // ★新規タスク保存関数
+        function saveNewTask() {
+            const val = taskInput.value.trim();
+            if (val && !isSaving) {
+                isSaving = true;
+                fetch('/add_task/', { 
+                    method: 'POST', headers: {'Content-Type': 'application/json'}, 
+                    body: JSON.stringify({title: val, time: taskTimeInput.value})
+                }).then(() => location.reload());
+            } else {
+                // 名前が空、または保存不要な場合はエリアを隠す
+                taskArea.style.display = 'none'; 
+                taskTimeInput.style.display = 'none';
+                taskInput.value = '';
+            }
+        }
+
+        // モーダル内のTabキー制御（解決策2）
+        document.getElementById('edit-title').addEventListener('keydown', (e) => {
+            if (isComposing) return; // 変換中は何もさせない
+            
+            if (e.key === 'Tab') { 
+                e.preventDefault(); 
+                document.getElementById('edit-time').focus(); 
+            }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitModalData();
+            }
+        });
+
+        // --- 6. クリックイベント（選択・編集・フォーム表示） ---
+        container.addEventListener('click', (e) => {
+            // ドラッグ操作（長押し含む）の直後はクリック処理を完全に無視する
+            if (isDragging) return;
+
+            const item = e.target.closest('.task-item');
+            
+            // タスク以外の場所（余白）をクリックした時
+            if (!item) {
+                // 選択削除モード中ならフォームは出さない
+                if (bulkDeleteBtn.style.display === 'block') return;
+
+                if (e.target.id !== 'new-task-input' && e.target.id !== 'new-task-time') {
+                    taskArea.style.display = 'flex'; 
+                    taskInput.focus();
+                }
+                return;
+            }
+
+            e.stopPropagation();
+
+            // 選択モード中のクリック処理
+            if (bulkDeleteBtn.style.display === 'block') {
+                item.classList.toggle('selected-for-delete');
+                const checkbox = item.querySelector('.todo-checkbox');
+                if (checkbox) checkbox.checked = item.classList.contains('selected-for-delete');
+                
+                const count = document.querySelectorAll('.task-item.selected-for-delete').length;
+                deleteBtn.innerText = `${count}件を削除`;
+                return; 
+            }
+
+            // 通常モード時のクリック処理：編集モーダルを開く
+            const eventData = JSON.parse(item.getAttribute('data-event'));
+            openEditModal(calendar.getEventById(eventData.id) || { 
+                id: eventData.id, 
+                title: eventData.title, 
+                backgroundColor: eventData.color, 
+                extendedProps: { time: eventData.time }, 
+                start: null, end: null 
+            });
+        });
+
+        // フォーム外クリックで保存
+        taskInput.addEventListener('blur', () => setTimeout(() => { if (!isSaving && document.activeElement !== taskTimeInput) saveNewTask(); }, 150));
+        taskTimeInput.addEventListener('blur', () => setTimeout(() => { if (!isSaving && document.activeElement !== taskInput) saveNewTask(); }, 150));
+
+        taskInput.addEventListener('keydown', (e) => {
+            if (isComposing) return;
+            if (e.key === 'Tab' && taskInput.value.trim() !== "") { e.preventDefault(); taskTimeInput.style.display = 'block'; taskTimeInput.focus(); }
+            else if (e.key === 'Enter') saveNewTask();
+        });
+        taskTimeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') saveNewTask(); });
+
+        // --- 7. ドラッグ＆ドロップ削除と長押し制御 ---
+        
+        // マウスを押した時
+        container.addEventListener('mousedown', (e) => { 
+            const item = e.target.closest('.task-item');
+            if (!item) return;
+
+            isDragging = false;
+            // 選択モード中でない時だけ、ドラッグ準備（枠の表示）を許可
+            if (bulkDeleteBtn.style.display === 'none') {
+                // 少しでもマウスを動かしたらドラッグ中とみなすための準備
+                const startX = e.clientX;
+                const startY = e.clientY;
+
+                const moveHandler = (me) => {
+                    // 5ピクセル以上動いたら「ドラッグ中」と判定し枠を出す
+                    if (Math.abs(me.clientX - startX) > 5 || Math.abs(me.clientY - startY) > 5) {
+                        isDragging = true;
+                        deleteZone.style.display = 'block';
+                    }
+                };
+
+                const upHandler = () => {
+                    window.removeEventListener('mousemove', moveHandler);
+                    window.removeEventListener('mouseup', upHandler);
+                };
+
+                window.addEventListener('mousemove', moveHandler);
+                window.addEventListener('mouseup', upHandler);
+            } else {
+                // 選択モード中の時は、長押ししても click イベントを殺さないように
+                // 単純に一定時間経過で isDragging を true にするだけの処理にする
+                setTimeout(() => { 
+                    if (e.buttons === 1) isDragging = true; 
+                }, 300);
+            }
+        });
+
+
+        // 補助関数
+        function isInZone(x, y, zone) { 
+            const r = zone.getBoundingClientRect();
+            // マウスの座標が、枠の「左端〜右端」かつ「上端〜下端」の間にあるか
+            return (
+                x >= r.left && 
+                x <= r.right && 
+                y >= r.top && 
+                y <= r.bottom
+            );
+        }
+        function updateTask(id, start) { fetch('/update_task_date/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id, start}) }).then(() => location.reload()); }
+        function deleteTask(id) { fetch('/delete_task/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id}) }).then(() => location.reload()); }
+        function updateTaskDuration(event) { 
+            fetch('/update_task_duration/', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: event.id, start: event.startStr, end: event.endStr}) }).then(() => location.reload());
+        }
+
+        // --- 8. 全体操作 ---
+        document.addEventListener('keydown', (e) => {
+            const activeEl = document.activeElement.tagName.toLowerCase();
+            if (editModal.style.display === 'block' || activeEl === 'input' || activeEl === 'textarea') return;
+
+            if (e.code === 'Space'|| e.key === ' ') {
+                e.preventDefault();
+                taskArea.style.display = 'flex';
+                taskInput.focus();
+            }
+            if (e.key === '0' || e.code === 'Numpad0') {
+                e.preventDefault();
+                slideDirection = ''; 
+                calendar.today();
+            }
+            if (e.key === 'ArrowLeft') { slideDirection = 'left'; calendar.prev(); }
+            else if (e.key === 'ArrowRight') { slideDirection = 'right'; calendar.next(); }
+        });
+
+        let isScrolling = false;
+        calendarEl.addEventListener('wheel', (e) => {
+            if (Math.abs(e.deltaX) < Math.abs(e.deltaY)) return; 
+            e.preventDefault();
+            if (isScrolling) return;
+            if (e.deltaX < -10) {
+                isScrolling = true; slideDirection = 'left'; calendar.prev();
+            } else if (e.deltaX > 10) {
+                isScrolling = true; slideDirection = 'right'; calendar.next();
+            }
+            if (isScrolling) setTimeout(() => { isScrolling = false; }, 500);
+        }, { passive: false });
+    });
+    </script>
+</body>
+</html>
