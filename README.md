@@ -14,6 +14,15 @@
   - 日本の祝日をAPIから自動取得して表示。
   - タスクごとのカラーカスタマイズ。
   - 期間選択（ドラッグ選択）による複数日タスクの一括登録。
+ 
+## 使用技術
+
+| カテゴリ | 技術スタック |
+| :--- | :--- |
+| **Backend** | Python 3.x, Django |
+| **Frontend** | JavaScript (ES6+), HTML5, CSS3 |
+| **Libraries** | [FullCalendar 6.1.10](https://fullcalendar.io/) |
+| **API** | [日本の祝日API](https://holidays-jp.github.io/) |
 
 - 要修正機能
   + タスク一覧からタスクを削除する機能
